@@ -96,8 +96,15 @@ def compute_at_loss(student_model, teacher_model, x, y, config):
         student_pred = student_logits[-1]  # Use final prediction
     else:
         student_outputs = student_model(x)
-        student_pred = student_outputs[0]
-        student_features = student_outputs[5:9]  # Extract features
+        if isinstance(student_outputs, tuple):
+            student_pred = student_outputs[0]
+            student_features = (
+                student_outputs[5:9] if len(student_outputs) > 5 else None
+            )
+        else:
+            # Standard model returns single tensor
+            student_pred = student_outputs
+            student_features = None
 
     # Get teacher predictions and features
     with torch.no_grad():

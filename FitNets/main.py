@@ -114,7 +114,11 @@ def compute_fitnets_loss(student_model, teacher_model, x, y, config):
         student_pred = student_logits[-1]  # Use final prediction
     else:
         student_outputs = student_model(x)
-        student_pred = student_outputs[0]
+        if isinstance(student_outputs, tuple):
+            student_pred = student_outputs[0]
+        else:
+            # Standard model returns single tensor
+            student_pred = student_outputs
 
     # Get teacher predictions
     with torch.no_grad():

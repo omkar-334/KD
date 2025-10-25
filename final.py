@@ -133,7 +133,7 @@ def run_knowledge_distillation_methods(data_config, num_classes, log_dir, datase
             model="ResNet18",
             data_dir=common_config["data_dir"],
             batch_size=common_config["batch_size"],
-            epochs=50,
+            epochs=30,
             lr=0.01,
             temperature=4.0,
             alpha=0.1,
@@ -179,7 +179,7 @@ def run_knowledge_distillation_methods(data_config, num_classes, log_dir, datase
             model="ResNet18",
             data_dir=common_config["data_dir"],
             batch_size=common_config["batch_size"],
-            epochs=50,
+            epochs=30,
             lr=0.01,
             temperature=4.0,
             alpha=0.1,
@@ -224,13 +224,13 @@ def run_knowledge_distillation_methods(data_config, num_classes, log_dir, datase
     logging.info("--- Training DML (Deep Mutual Learning) ---")
     try:
         dml_config = create_dml_config(
-            model="ResNet18",
+            model="ResNet32",  # Use ResNet32 which is supported by DML
             data_dir=common_config["data_dir"],
             batch_size=common_config["batch_size"],
-            epochs=50,
+            epochs=30,
             lr=0.01,
             model_num=2,  # Number of student models
-            experiment_name="DML_ResNet18_Final",
+            experiment_name="DML_ResNet32_Final",
         )
 
         start_time = time.time()
@@ -246,7 +246,7 @@ def run_knowledge_distillation_methods(data_config, num_classes, log_dir, datase
 
         dml_metrics = {
             "method": "DML",
-            "model": "ResNet18",
+            "model": "ResNet32",
             "teacher": "None (Mutual Learning)",
             "best_accuracy": best_acc,
             "training_time": training_time,
@@ -279,7 +279,7 @@ def run_knowledge_distillation_methods(data_config, num_classes, log_dir, datase
             model="ResNet18",
             data_dir=common_config["data_dir"],
             batch_size=common_config["batch_size"],
-            epochs=50,
+            epochs=30,
             lr=0.01,
             temperature=4.0,
             alpha=0.1,
@@ -330,7 +330,10 @@ def compare_results(teacher_metrics, kd_results, log_dir):
     logging.info("=== Comparing Results ===")
 
     # Combine all results
-    all_metrics = [teacher_metrics] + kd_results
+    if teacher_metrics:
+        all_metrics = [teacher_metrics] + kd_results
+    else:
+        all_metrics = kd_results
 
     # Create DataFrame for analysis
     df = pd.DataFrame(all_metrics)
@@ -345,20 +348,26 @@ def compare_results(teacher_metrics, kd_results, log_dir):
     print(df_sorted.to_string(index=False, float_format="%.4f"))
     print("=" * 80)
 
-    # Calculate improvements over teacher
-    teacher_acc = teacher_metrics["best_accuracy"]
-    print(f"\nTeacher (ResNet50) Accuracy: {teacher_acc:.4f}")
-    print("\nStudent Model Improvements:")
-    print("-" * 50)
+    # Calculate improvements over teacher (if teacher exists)
+    if teacher_metrics:
+        teacher_acc = teacher_metrics["best_accuracy"]
+        print(f"\nTeacher (ResNet50) Accuracy: {teacher_acc:.4f}")
+        print("\nStudent Model Improvements:")
+        print("-" * 50)
 
-    for _, row in df_sorted.iterrows():
-        if row["method"] != "Teacher":
-            improvement = row["best_accuracy"] - teacher_acc
-            improvement_pct = (improvement / teacher_acc) * 100
-            print(
-                f"{row['method']:12}: {row['best_accuracy']:.4f} "
-                f"({improvement:+.4f}, {improvement_pct:+.2f}%)"
-            )
+        for _, row in df_sorted.iterrows():
+            if row["method"] != "Teacher":
+                improvement = row["best_accuracy"] - teacher_acc
+                improvement_pct = (improvement / teacher_acc) * 100
+                print(
+                    f"{row['method']:12}: {row['best_accuracy']:.4f} "
+                    f"({improvement:+.4f}, {improvement_pct:+.2f}%)"
+                )
+    else:
+        print("\nNo teacher model - comparing student methods only")
+        print("-" * 50)
+        for _, row in df_sorted.iterrows():
+            print(f"{row['method']:12}: {row['best_accuracy']:.4f}")
 
     # Save detailed results
     results_file = os.path.join(log_dir, "comparison_results.json")
@@ -372,12 +381,14 @@ def compare_results(teacher_metrics, kd_results, log_dir):
     # Create summary
     summary = {
         "experiment_timestamp": datetime.now().isoformat(),
-        "teacher_accuracy": teacher_acc,
-        "best_student_method": df_sorted.iloc[1]["method"]
-        if len(df_sorted) > 1
+        "teacher_accuracy": teacher_metrics["best_accuracy"]
+        if teacher_metrics
+        else None,
+        "best_student_method": df_sorted.iloc[0]["method"]
+        if len(df_sorted) > 0
         else "None",
-        "best_student_accuracy": df_sorted.iloc[1]["best_accuracy"]
-        if len(df_sorted) > 1
+        "best_student_accuracy": df_sorted.iloc[0]["best_accuracy"]
+        if len(df_sorted) > 0
         else 0.0,
         "total_methods_tested": len(kd_results),
         "successful_methods": len([r for r in kd_results if "error" not in r]),
@@ -408,7 +419,7 @@ def main(data_dir="data", dataset_name="default", batch_size=32):
     logging.info("Dataset: %s", dataset_name)
 
     try:
-        # 1. Prepare data loaders
+        # # 1. Prepare data loaders
         (
             train_loader,
             val_loader,
@@ -418,10 +429,10 @@ def main(data_dir="data", dataset_name="default", batch_size=32):
             dataset_name,
         ) = prepare_dataloaders(data_dir, batch_size, dataset_name)
 
-        # 2. Train ResNet50 teacher
-        teacher_results, teacher_metrics = train_teacher_model(
-            data_config, num_classes, log_dir, dataset_name
-        )
+        # # 2. Train ResNet50 teacher
+        # teacher_results, teacher_metrics = train_teacher_model(
+        #     data_config, num_classes, log_dir, dataset_name
+        # )
 
         # 3. Run all knowledge distillation methods
         kd_results = run_knowledge_distillation_methods(
@@ -429,7 +440,9 @@ def main(data_dir="data", dataset_name="default", batch_size=32):
         )
 
         # 4. Compare and analyze results
-        comparison_df, summary = compare_results(teacher_metrics, kd_results, log_dir)
+        comparison_df, summary = compare_results(
+            teacher_metrics=None, kd_results=kd_results, log_dir=log_dir
+        )
 
         print("\nExperiment completed successfully!")
         print(f"Results saved to: {log_dir}")

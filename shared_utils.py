@@ -328,7 +328,7 @@ def prepare_data_loaders(config):
         config["data_dir"],
         batch_size=config["batch_size"],
         num_workers=config["num_workers"],
-        augment=config["augment"],
+        augment=True,
     )
 
 

@@ -115,40 +115,56 @@ def compute_byot_loss(student_model, x, y, config, teacher_model=None):
         }
 
     # ResNet models
-    # ResNet models return (output, middle_output1, middle_output2, middle_output3, final_fea, middle1_fea, middle2_fea, middle3_fea)
     outputs = student_model(x)
-    final_output = outputs[0]
-    middle_outputs = outputs[1:4]
-    final_feat = outputs[4]
-    middle_feats = outputs[5:8]
 
-    # Final prediction loss
-    final_loss = criterion(final_output, y)
+    if isinstance(outputs, tuple):
+        # Custom model with intermediate outputs
+        # ResNet models return (output, middle_output1, middle_output2, middle_output3, final_fea, middle1_fea, middle2_fea, middle3_fea)
+        final_output = outputs[0]
+        middle_outputs = outputs[1:4]
+        final_feat = outputs[4]
+        middle_feats = outputs[5:8]
 
-    # Intermediate losses
-    intermediate_losses = sum(
-        criterion(middle_outputs[i], y) for i in range(len(middle_outputs))
-    )
+        # Final prediction loss
+        final_loss = criterion(final_output, y)
 
-    # Knowledge distillation losses
-    kd_losses = 0
-    feature_losses = 0
+        # Intermediate losses
+        intermediate_losses = sum(
+            criterion(middle_outputs[i], y) for i in range(len(middle_outputs))
+        )
 
-    teacher_output = final_output.detach()
-    for i, middle_output in enumerate(middle_outputs):
-        kd_loss = kd_loss_function(middle_output, teacher_output, config["temperature"])
-        kd_losses += kd_loss
+        # Knowledge distillation losses
+        kd_losses = 0
+        feature_losses = 0
 
-        # Feature matching loss
-        if i < len(middle_feats):
-            feat_loss = feature_loss_function(middle_feats[i], final_feat.detach())
-            feature_losses += feat_loss
+        teacher_output = final_output.detach()
+        for i, middle_output in enumerate(middle_outputs):
+            kd_loss = kd_loss_function(
+                middle_output, teacher_output, config["temperature"]
+            )
+            kd_losses += kd_loss
 
-    total_loss = (
-        (1 - config["alpha"]) * (final_loss + intermediate_losses)
-        + config["alpha"] * kd_losses
-        + config["beta"] * feature_losses
-    )
+            # Feature matching loss
+            if i < len(middle_feats):
+                feat_loss = feature_loss_function(middle_feats[i], final_feat.detach())
+                feature_losses += feat_loss
+
+        total_loss = (
+            (1 - config["alpha"]) * (final_loss + intermediate_losses)
+            + config["alpha"] * kd_losses
+            + config["beta"] * feature_losses
+        )
+    else:
+        # Standard model returns single tensor
+        final_output = outputs
+        final_loss = criterion(final_output, y)
+
+        # No intermediate outputs for standard models
+        intermediate_losses = 0
+        kd_losses = 0
+        feature_losses = 0
+
+        total_loss = final_loss
 
     return total_loss, {
         "final_loss": final_loss.item(),
